@@ -46,48 +46,32 @@ int readTransformationsReps(char* filepath){                    //Lê o ficheiro
     }
 }
 
-char* getInputFileFormat(char* inputFileClean){
-    char temp[ARGVMAXSIZE];
-    temp[0] = '\0';
-    strcat(temp, "<");
-    strcat(temp, inputFileClean);
-    strcat(temp, ">");
-
-    strcpy(inputFileClean,temp);
-}
-
-char* getTransformationFormat(char* t, char* transformation){
-
-    char temp[ARGVMAXSIZE];
-    temp[0] = '\0';
-    strcat(temp, transformationsFolder);
-    strcat(temp, t);
-    
-    strcpy(transformation,temp);
+int addFolderToTransformation(char* t, char* transformation){
+    strcpy(transformation,transformationsFolder);
+    strcat(transformation,t);
 }
 
 int processFile(int argc, char** argv){
     
-    char* inputFile = strdup(argv[2]);
-    getInputFileFormat(inputFile);
-
-    char* outputFile = argv[3];
-
-    //for(int i=4 ; i<argc ; i++){
-        char* t = strdup(argv[4]);
-        char* transformation;
-        getTransformationFormat(t,transformation);
-
-        //printf("%s",transformations[i]);
-
-        printf("(%s,%s,%s,%s\n",argv[4],argv[4],inputFile,outputFile);
-        execlp(argv[4],argv[4],inputFile,outputFile,NULL);
-        printf("hello");
-        
-    //}
-    
+    int fdinput = open(argv[2],O_RDONLY);
+    int fdoutput = open(argv[3],O_WRONLY | O_TRUNC | O_CREAT, 0666);
 
 
+    for(int i=4 ; i<argc ; i++){
+
+        if( fork() == 0){
+            char* t = strdup(argv[i]);
+
+            char* transformation = malloc(sizeof(char)*(strlen(t)+strlen(transformationsFolder))) ;
+            addFolderToTransformation(t,transformation);
+            free(t);
+
+            dup2(fdinput,0);
+            dup2(fdoutput,1);
+
+            execl(transformation,transformation,NULL);
+        }
+    }
 
 }
 
