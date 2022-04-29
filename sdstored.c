@@ -6,16 +6,20 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+
 
 #define NROFTRANSF 7
 #define ARGVMAXSIZE 300
+#define SIZEOFBUFF 100
 
-char* transformationsReps = "./transformationsReps/Reps";
+char* transformationsRepsFolder = "./transformationsReps/Reps";
 char* transformationsFolder = "./transformations/";
 
 char* transformationsFile[NROFTRANSF];
-int reps[NROFTRANSF];
+int repsFile[NROFTRANSF];
 
+int transformationsReps[NROFTRANSF];
 
 
 
@@ -38,7 +42,7 @@ int readTransformationsReps(char* filepath){                    //Lê o ficheiro
             isTransformation = false;                       // prox token é o nr de reps
         }
         else{                                               // se nao for transformação
-            reps[ind] = atoi(token);                        // guardar nr de reps na lista de reps (msm indice que a correspondente transformação)
+            repsFile[ind] = atoi(token);                        // guardar nr de reps na lista de reps (msm indice que a correspondente transformação)
             isTransformation = true;                        // o prox token é transformação
             ind++;
         }
@@ -59,16 +63,12 @@ int fillComands(char* cmds[],int argc,char** argv){                 // vai preen
 
 }
 
-int processFile(int argc, char** argv){
+int processFile(char* input,char* output, char** cmds, int nrCmds){
     
-    int fdinput = open(argv[2],O_RDONLY);                                      
-    int fdoutput = open(argv[3],O_WRONLY | O_TRUNC | O_CREAT, 0666);
+    int fdinput = open(input,O_RDONLY);                                      
+    int fdoutput = open(output,O_WRONLY | O_TRUNC | O_CREAT, 0666);
 
-    int nrCmds = argc-4;                                            // nr de transformacoes
-    char* cmds[nrCmds];                                             // lista de transformacoes
     int fildes[nrCmds][2];                                          // lista de fildes para cada uma das transformações
-
-    fillComands(cmds,argc,argv);                                    // preencher a lista de transformações para não mexer com os argv's
 
     for(int cmd=0 ; cmd<nrCmds ; cmd++){                            // para todas as transformação
 
@@ -130,13 +130,53 @@ int showState(){
 
 }
 
+int setToZeroAllTransformationsReps(int transformationsReps[]){
+
+    for(int i=0 ; i<NROFTRANSF ; i++){
+        transformationsReps[i] = 0;
+    }
+
+}
+
+int checkReps(char** cmds,int nrCmds){
+
+    for(int i=0 ; i<nrCmds ; i++){
+        for( int j=0 ; j<NROFTRANSF ; j++)
+            if( strcmp(cmds[i],transformationsFile[j])==0 ){
+                if (transformationsReps[j] == repsFile[j] ) return 1;
+            }
+    }
+    return 0;
+}
 
 int main(int argc, char** argv){
 
-    readTransformationsReps(transformationsReps);
+    readTransformationsReps(transformationsRepsFolder);
+    setToZeroAllTransformationsReps(transformationsReps);
 
-    if( strcmp(argv[1],"proc-file") == 0) processFile(argc,argv);                   //se for para processar ficheiro
-    else if( strcmp(argv[1],"status") == 0) showState();                            //se for para aceder a estado
+    mkfifo("FifoMain",0666);
+
+    int fdFifo = open("FifoMain",O_RDONLY);
+    int fdFifoc = open("FifoMain",O_WRONLY);
+    char buff[SIZEOFBUFF];
+    int readBytes;
+
+    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
+        write(1,buff,readBytes);
+    }
+
+    /*
+
+    if( strcmp(argv[1],"proc-file") == 0){
+        
+        int nrCmds = argc-4;                                            // nr de transformacoes
+        char* cmds[nrCmds];
+        fillComands(cmds,argc,argv);                                    // preencher a lista de transformações para não mexer com os argv's
+        checkReps(cmds,nrCmds);
+        processFile(argv[2],argv[3],cmds,nrCmds);                       // se for para processar ficheiro
+    }
+    else if( strcmp(argv[1],"status") == 0) showState();                // se for para aceder a estado
         else printf("Comando inserido não existe");
 
+    */
 }
