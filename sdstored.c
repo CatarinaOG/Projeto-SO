@@ -12,6 +12,16 @@
 #define NROFTRANSF 7
 #define ARGVMAXSIZE 300
 #define SIZEOFBUFF 100
+#define MAXQUEUESIZE 100
+
+typedef struct request {
+    int nrCmds;
+    int pid;    
+    char* input;
+    char* output;
+    char** cmds; 
+}* Request;
+
 
 char* transformationsRepsFolder = "./transformationsReps/Reps";
 char* transformationsFolder = "./transformations/";
@@ -55,18 +65,27 @@ int addFolderToTransformation(char* t, char* transformation){      //vai colocar
     strcat(transformation,t);
 }
 
-int fillComands(char* cmds[],int argc,char** argv){                 // vai preencher cmds com todas as transformacoes
+int fillRequest(char* buff, Request r){                 // vai preencher cmds com todas os elementos do pedido
     
-    for(int i=4 ; i<argc ; i++){
-        cmds[i-4] = strdup(argv[i]);
-    }
+    r->pid = atoi(strsep(&buff," "));
+    r->nrCmds = atoi(strsep(&buff," "));
+    r->input = strsep(&buff," ");
+    r->output = strsep(&buff," ");
 
+    r->cmds = malloc(sizeof(char)*(r->nrCmds));
+    
+    for(int i=0 ; i< (r->nrCmds) ; i++){
+        r->cmds[i] = strdup(strsep(&buff," "));
+    }
 }
 
-int processFile(char* input,char* output, char** cmds, int nrCmds){
+int processFile(Request r){
+
+    char** cmds = r->cmds;
+    int nrCmds = r->nrCmds;
     
-    int fdinput = open(input,O_RDONLY);                                      
-    int fdoutput = open(output,O_WRONLY | O_TRUNC | O_CREAT, 0666);
+    int fdinput = open(r->input,O_RDONLY);                                      
+    int fdoutput = open(r->output,O_WRONLY | O_TRUNC | O_CREAT, 0666);
 
     int fildes[nrCmds][2];                                          // lista de fildes para cada uma das transformações
 
@@ -138,31 +157,64 @@ int setToZeroAllTransformationsReps(int transformationsReps[]){
 
 }
 
-int checkReps(char** cmds,int nrCmds){
+int checkReps(char** elements,int nrElements){
 
-    for(int i=0 ; i<nrCmds ; i++){
+    for(int i=0 ; i<nrElements ; i++){
         for( int j=0 ; j<NROFTRANSF ; j++)
-            if( strcmp(cmds[i],transformationsFile[j])==0 ){
+            if( strcmp(elements[i],transformationsFile[j])==0 ){
                 if (transformationsReps[j] == repsFile[j] ) return 1;
             }
     }
     return 0;
 }
 
+int updateReps(Request r){
+
+    for(int i=0 ; i<r->nrCmds ; i++){
+        for(int j=0 ; j<NROFTRANSF ; j++){
+            if(strcmp(r->cmds[i],transformationsFile[j])==0)
+                transformationsReps[j] += 1;
+        }
+    }
+
+}
+
 int main(int argc, char** argv){
 
     readTransformationsReps(transformationsRepsFolder);
     setToZeroAllTransformationsReps(transformationsReps);
-
+    
     mkfifo("FifoMain",0666);
 
     int fdFifo = open("FifoMain",O_RDONLY);
-    int fdFifoc = open("FifoMain",O_WRONLY);
-    char buff[SIZEOFBUFF];
+    int fdFifoWR = open("FifoMain",O_WRONLY);
+    
+    char* buff = malloc(sizeof(char)*SIZEOFBUFF);
     int readBytes;
+    char* elementOfRequest;
+
+    int* pidQueue;
+    int* sizeQueue;
 
     while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
-        write(1,buff,readBytes);
+
+        Request r = malloc(sizeof(struct request));
+        fillRequest(buff,r);
+
+        int proceed = checkReps(r->cmds,r->nrCmds);
+
+        if(proceed == 0){
+            
+            updateReps(r);
+            processFile(r);
+
+            for(int j=0 ; j<NROFTRANSF ; j++){
+                printf("%s: %d\n",transformationsFile[j],transformationsReps[j]);
+            }
+        }
+        
+
+
     }
 
     /*

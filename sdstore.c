@@ -11,16 +11,33 @@
 #define SIZEOFBUFF 100
 
 void sendArgumento(int fdFifoMain,int argc, char** argv){
-    char* concateneted = malloc(sizeof(char)*100);
     int totalSize = 0;
+    char strPid[20];
+    char strArgc[20];
 
-    for(int i=1 ; i<argc; i++){
+
+    char* concateneted = malloc(sizeof(char)*100);
+    int pid = getpid();
+
+    sprintf(strPid, "%d", pid);                                  // pid como string
+    sprintf(strArgc,"%d",argc-3);
+
+    strcat(concateneted,strPid);                                 // adiciona pid para enviar
+    strcat(concateneted," ");
+    totalSize += strlen(strPid) + 1;
+
+    strcat(concateneted,strArgc);                               // adiciona nr de argumentos para enviar
+    strcat(concateneted," ");
+    totalSize += strlen(strArgc) + 1;
+
+
+    for(int i=1 ; i<argc; i++){                                 // adicionar todos os comandos do argv para enviar
         strcat(concateneted,argv[i]);
         strcat(concateneted," ");
         totalSize += strlen(argv[i])+1;
     }
 
-    write(fdFifoMain,concateneted,totalSize);
+    write(fdFifoMain,concateneted,totalSize);                   // envia string concatenada para fifo
 
 }
 
