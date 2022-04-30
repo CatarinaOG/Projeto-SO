@@ -13,6 +13,7 @@
 #define ARGVMAXSIZE 300
 #define SIZEOFBUFF 100
 #define MAXQUEUESIZE 100
+#define QUEUESIZE 10
 
 typedef struct request {
     int nrCmds;
@@ -30,6 +31,8 @@ char* transformationsFile[NROFTRANSF];
 int repsFile[NROFTRANSF];
 
 int transformationsReps[NROFTRANSF];
+
+Request* queue;
 
 
 
@@ -179,6 +182,44 @@ int updateReps(Request r){
 
 }
 
+int fillQueueNULL(){
+
+    for(int i=0 ; i<QUEUESIZE ; i++){
+        queue[i] = NULL;
+    }
+
+}
+
+int addToQueue(Request r){
+
+    int added = 0;
+
+    for(int i=0 ; (i<QUEUESIZE) && (added == 0) ; i++){
+        if(queue[i] == NULL){
+            queue[i] = r;
+            added = 1;
+        }
+    }
+}
+
+int removeFromQueue(Request r){
+    for(int i=0 ; i<QUEUESIZE ; i++){
+        if(queue[i] == r)
+            queue = NULL;
+    }
+}
+
+int requestInQueueCanProceed(){
+
+    for(int i=0 ; i<QUEUESIZE ; i++){
+        if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0){
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 int main(int argc, char** argv){
 
     readTransformationsReps(transformationsRepsFolder);
@@ -191,44 +232,40 @@ int main(int argc, char** argv){
     
     char* buff = malloc(sizeof(char)*SIZEOFBUFF);
     int readBytes;
+    int requestToProceed;
     char* elementOfRequest;
 
-    int* pidQueue;
-    int* sizeQueue;
+    queue = malloc(sizeof(struct request)*QUEUESIZE);
+    fillQueueNULL();
 
-    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
+    
+    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0 || (requestToProceed = requestInQueueCanProceed()) > 0){
 
-        Request r = malloc(sizeof(struct request));
-        fillRequest(buff,r);
 
-        int proceed = checkReps(r->cmds,r->nrCmds);
+        if(readBytes > 0){
+            Request r = malloc(sizeof(struct request));
+            fillRequest(buff,r);
 
-        if(proceed == 0){
+            int proceed = checkReps(r->cmds,r->nrCmds);
             
-            updateReps(r);
-            processFile(r);
-
-            for(int j=0 ; j<NROFTRANSF ; j++){
-                printf("%s: %d\n",transformationsFile[j],transformationsReps[j]);
+            if(proceed == 0){
+                updateReps(r);
+                processFile(r);
             }
+            else{
+                addToQueue(r);
+            }
+            printf("%s:%d\n",transformationsFile[3],transformationsReps[3]);
         }
+        else{
+            Request r = queue[requestToProceed];
+            updateReps(r);
+            removeFromQueue(r);
+            processFile(r);
+        }
+
         
-
-
+        if(queue[0] != NULL)
+            printf("pid %d in queue\n",queue[0]->pid);
     }
-
-    /*
-
-    if( strcmp(argv[1],"proc-file") == 0){
-        
-        int nrCmds = argc-4;                                            // nr de transformacoes
-        char* cmds[nrCmds];
-        fillComands(cmds,argc,argv);                                    // preencher a lista de transformações para não mexer com os argv's
-        checkReps(cmds,nrCmds);
-        processFile(argv[2],argv[3],cmds,nrCmds);                       // se for para processar ficheiro
-    }
-    else if( strcmp(argv[1],"status") == 0) showState();                // se for para aceder a estado
-        else printf("Comando inserido não existe");
-
-    */
 }
