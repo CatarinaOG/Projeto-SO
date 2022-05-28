@@ -11,13 +11,15 @@
 
 #define NROFTRANSF 7
 #define ARGVMAXSIZE 300
-#define SIZEOFBUFF 100
+#define SIZEOFBUFF 200
 #define MAXQUEUESIZE 100
 #define QUEUESIZE 10
+#define RESPONSEMAXSIZE 100
+#define MAXFILESIZEINT 50
 
 typedef struct request {
     int nrCmds;
-    int pid;    
+    char* pid;    
     char* input;
     char* output;
     char** cmds; 
@@ -70,7 +72,7 @@ int addFolderToTransformation(char* t, char* transformation){      //vai colocar
 
 int fillRequest(char* buff, Request r){                 // vai preencher cmds com todas os elementos do pedido
     
-    r->pid = atoi(strsep(&buff," "));
+    r->pid = strsep(&buff," ");
     r->nrCmds = atoi(strsep(&buff," "));
     r->input = strsep(&buff," ");
     r->output = strsep(&buff," ");
@@ -82,12 +84,17 @@ int fillRequest(char* buff, Request r){                 // vai preencher cmds co
     }
 }
 
-int processFile(Request r){
+int processFile(Request r, int fdPipe){
+
+    char* buff = "Processing";
+
+    write(fdPipe,&buff, strlen(buff));
 
     char** cmds = r->cmds;
     int nrCmds = r->nrCmds;
+
     
-    int fdinput = open(r->input,O_RDONLY);                                      
+    int fdinput = open(r->input,O_RDONLY);                                  
     int fdoutput = open(r->output,O_WRONLY | O_TRUNC | O_CREAT, 0666);
 
     int fildes[nrCmds][2];                                          // lista de fildes para cada uma das transformações
@@ -99,6 +106,7 @@ int processFile(Request r){
 
             if( fork() == 0){                                       // fork vai tratar de o executar
                 close(fildes[0][0]);                                // fechar a leitura do pipe 
+                sleep(5);
                 
                 char* transformation = malloc(sizeof(char)*(strlen(cmds[cmd])+strlen(transformationsFolder))) ;     // alocar memória para o path necessario para o executavel
                 addFolderToTransformation(cmds[cmd],transformation);                                                // colocar o path necessário em transformação
@@ -146,6 +154,31 @@ int processFile(Request r){
         }
     }
 
+    int status;
+
+    for(int cmd=0 ; cmd<nrCmds ; cmd++)
+        wait(&status);
+
+    char* tamInput = malloc(sizeof(char)*MAXFILESIZEINT);
+    char* tamOutput = malloc(sizeof(char)*MAXFILESIZEINT);
+
+    int tamanhoInput = lseek(fdinput, 0, SEEK_END);
+    int tamanhoOutput = lseek(fdoutput, 0, SEEK_END);
+
+    sprintf(tamInput,"%d",tamanhoInput);
+    sprintf(tamOutput,"%d",tamanhoOutput);
+
+    close(fdinput);
+    close(fdoutput);
+
+    char* concateneted = malloc(sizeof(char)*RESPONSEMAXSIZE);
+
+    strcat(concateneted,tamInput);
+    strcat(concateneted," ");
+    strcat(concateneted,tamOutput);
+
+    write(fdPipe,concateneted,strlen(concateneted));
+
 }
 
 int showState(){
@@ -168,6 +201,7 @@ int checkReps(char** elements,int nrElements){
                 if (transformationsReps[j] == repsFile[j] ) return 1;
             }
     }
+
     return 0;
 }
 
@@ -180,6 +214,14 @@ int updateReps(Request r){
         }
     }
 
+}
+
+int removeReps(char* transformation ){
+    printf("check trans:|%s|\n",transformation);
+    for(int i=0 ; i<NROFTRANSF ; i++){
+        if(strcmp(transformation,transformationsFile[i])==0)
+            transformationsReps[i]--;
+    }
 }
 
 int fillQueueNULL(){
@@ -205,20 +247,47 @@ int addToQueue(Request r){
 int removeFromQueue(Request r){
     for(int i=0 ; i<QUEUESIZE ; i++){
         if(queue[i] == r)
-            queue = NULL;
+            queue[i] = NULL;
     }
 }
 
 int requestInQueueCanProceed(){
+    
 
-    for(int i=0 ; i<QUEUESIZE ; i++){
-        if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0){
-            return i;
-        }
-    }
-
+    for(int i=0 ; i<QUEUESIZE ; i++)
+        if(queue[i] != NULL)
+            if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0)
+                return i;
+        
     return -1;
 }
+
+int checkIfRequest(char** buff){
+
+    char* type = strsep(buff," ");
+    int ret = 0;
+
+
+    if(strcmp(type,"proc-file") == 0) ret = 1;
+
+    return ret;
+}
+
+void checkQueue(){
+
+    int requestToProceed;
+
+    while( (requestToProceed = requestInQueueCanProceed()) >= 0){
+        Request r = queue[requestToProceed];
+        
+        int fdPipe = open(r->pid,O_WRONLY);
+        updateReps(r);
+        removeFromQueue(r);
+        processFile(r,fdPipe);
+    }
+
+}
+
 
 int main(int argc, char** argv){
 
@@ -237,35 +306,43 @@ int main(int argc, char** argv){
 
     queue = malloc(sizeof(struct request)*QUEUESIZE);
     fillQueueNULL();
-
     
-    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0 || (requestToProceed = requestInQueueCanProceed()) > 0){
-
-
-        if(readBytes > 0){
+    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
+        
+        if(checkIfRequest(&buff)){
             Request r = malloc(sizeof(struct request));
+
             fillRequest(buff,r);
 
+
             int proceed = checkReps(r->cmds,r->nrCmds);
+
+            int fdPipe = open(r->pid,O_WRONLY);
             
             if(proceed == 0){
+                printf("Processing\n");
                 updateReps(r);
-                processFile(r);
+                processFile(r,fdPipe);
             }
             else{
+                printf("Pending...\n");
+                
+                char* buff = "Pending...";
+                write(fdPipe,&buff, strlen(buff));
+
                 addToQueue(r);
+
+                close(fdPipe);
+
             }
-            printf("%s:%d\n",transformationsFile[3],transformationsReps[3]);
         }
         else{
-            Request r = queue[requestToProceed];
-            updateReps(r);
-            removeFromQueue(r);
-            processFile(r);
+            printf("Concluded!\n");
+            int nrCmds = atoi(strsep(&buff," "));
+            for(int i=0 ; i<nrCmds ; i++)
+                removeReps(strsep(&buff," "));
+            
+            checkQueue();
         }
-
-        
-        if(queue[0] != NULL)
-            printf("pid %d in queue\n",queue[0]->pid);
     }
 }

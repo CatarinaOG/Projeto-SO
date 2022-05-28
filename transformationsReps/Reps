@@ -1,5 +1,5 @@
 nop 3
-bcompress 4
+bcompress 1
 bdecompress 4
 gcompress 2
 gdecompress 2

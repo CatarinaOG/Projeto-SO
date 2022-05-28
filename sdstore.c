@@ -8,60 +8,87 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 
-#define SIZEOFBUFF 100
+#define SIZEOFBUFF 1024
+#define COMMANDMAXSIZE 200
+#define MAXSIZEINT 20
 
-void sendArgumento(int fdFifoMain,int argc, char** argv, char* fifoClient){
-    int totalSize = 0;
-    char strPid[20];
-    char strArgc[20];
+void sendRequest(int fdFifoMain,int argc, char** argv, char* pid){
+    printf("pid:%s\n",pid);
+    
+    char nrCmds[MAXSIZEINT];
 
+    char* concateneted = malloc(sizeof(char)*COMMANDMAXSIZE);
 
-    char* concateneted = malloc(sizeof(char)*150);
+    sprintf(nrCmds,"%d",argc-4);
 
-    sprintf(strArgc,"%d",argc-3);
+    strcat(concateneted,"proc-file ");
 
-    strcat(concateneted,fifoClient);                              // adiciona nome do fifo no qual vai receber respostas para enviar
+    strcat(concateneted,pid);                                 // adiciona pid para enviar
     strcat(concateneted," ");
-    totalSize += strlen(fifoClient) + 1;
 
-    strcat(concateneted,strArgc);                               // adiciona nr de argumentos para enviar
+    strcat(concateneted,nrCmds);                               // adiciona nr de argumentos para enviar
     strcat(concateneted," ");
-    totalSize += strlen(strArgc) + 1;
 
 
-    for(int i=1 ; i<argc; i++){                                 // adicionar todos os comandos do argv para enviar
+    for(int i=2 ; i<argc; i++){                                 // adicionar todos os comandos do argv para enviar
         strcat(concateneted,argv[i]);
         strcat(concateneted," ");
-        totalSize += strlen(argv[i])+1;
     }
 
-    write(fdFifoMain,concateneted,totalSize);                   // envia string concatenada para fifo
+    printf("Send: %s\n",concateneted);
+
+    write(fdFifoMain,concateneted,strlen(concateneted));                   // envia string concatenada para fifo
+
+
 }
 
+void sendFinished(int fdFifoMain, int argc, char** argv){
 
-void receiveAnswers(fifoClient){
-    int fdFifo = open(fifoClient, O_RDONLY);
-    int fdFifoWR = open(fifoClient, O_WRONLY);
+    char* concateneted = malloc(sizeof(char)*COMMANDMAXSIZE);
 
-    while((readBytes = read(fdFifo,buff,SIZEOFBUFF)) > 0){
-        if(readBytes > 0){
-            
-        }
+    strcat(concateneted,"finish ");
+
+    char nrCmds[MAXSIZEINT];
+
+    sprintf(nrCmds,"%d",argc-4);
+    strcat(concateneted,nrCmds);
+    strcat(concateneted," ");
+
+    for(int i=0 ; i<argc-4; i++){                                 // adicionar todos os comandos do argv para enviar
+        strcat(concateneted,argv[i+4]);
+        strcat(concateneted," ");
     }
+
+    printf("concat:|%s|\n",concateneted);
+
+    write(fdFifoMain,concateneted,strlen(concateneted));
+
 }
 
 
 int main(int argc, char** argv){
 
     int fdFifoMain = open("FifoMain",O_WRONLY);
-    char buff[SIZEOFBUFF];
-    int readBytes;
-    char fifoClient[20];
+    char* buff = malloc(sizeof(char)*SIZEOFBUFF);
+    char pidStr[20];
+    
+    int pid = getpid();
+    sprintf(pidStr, "%d", pid);
 
-    sprintf(fifoClient, "%d", pid);
-    mkfifo(fifoClient,0666);
+    mkfifo(pidStr,0666);
 
-    sendArgumento(fdFifoMain, argc, argv, fifoClient);
+    sendRequest(fdFifoMain, argc, argv, pidStr);
 
-    receiveAnswers(fifoClient);
+    int fdFifo = open(pidStr,O_RDONLY);
+
+    read(fdFifo,buff,SIZEOFBUFF);
+    printf("Processing...\n");
+
+    read(fdFifo,buff,SIZEOFBUFF);
+    int bytesInput = atoi(strsep(&buff," "));
+    int bytesOutput = atoi(strsep(&buff," "));
+    printf("Concluded(bytes-input: %d, bytes-output: %d)\n",bytesInput,bytesOutput);
+
+    sendFinished(fdFifoMain,argc,argv);
+
 }
