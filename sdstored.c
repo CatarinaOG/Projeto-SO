@@ -10,9 +10,7 @@
 
 
 #define NROFTRANSF 7
-#define ARGVMAXSIZE 300
 #define SIZEOFBUFF 200
-#define MAXQUEUESIZE 100
 #define QUEUESIZE 10
 #define RESPONSEMAXSIZE 100
 #define MAXFILESIZEINT 50
@@ -23,6 +21,7 @@ typedef struct request {
     char* input;
     char* output;
     char** cmds; 
+    int priority;
 }* Request;
 
 
@@ -35,6 +34,7 @@ int repsFile[NROFTRANSF];
 int transformationsReps[NROFTRANSF];
 
 Request* queue;
+Request* working;
 
 
 
@@ -50,7 +50,7 @@ int readTransformationsReps(char* filepath){                    //Lê o ficheiro
     read(fd,buffer,bufferSize);                             //lê ficheiro
 
     token = strtok(buffer, " \n");                          //separa tudo or espaços e \n
-   
+
     while( token != NULL ) {                                
         if(isTransformation){                               // se for transformação
             transformationsFile[ind] = token;               // guardar na lista de transformações
@@ -71,17 +71,17 @@ int addFolderToTransformation(char* t, char* transformation){      //vai colocar
 }
 
 int fillRequest(char* buff, Request r){                 // vai preencher cmds com todas os elementos do pedido
-    
-    r->pid = strsep(&buff," ");
+
+    r->pid = strdup(strsep(&buff," "));
     r->nrCmds = atoi(strsep(&buff," "));
-    r->input = strsep(&buff," ");
-    r->output = strsep(&buff," ");
+    r->priority = atoi(strsep(&buff," "));
+    r->input = strdup(strsep(&buff," "));
+    r->output = strdup(strsep(&buff," "));
 
     r->cmds = malloc(sizeof(char)*(r->nrCmds));
     
-    for(int i=0 ; i< (r->nrCmds) ; i++){
+    for(int i=0 ; i< (r->nrCmds) ; i++)
         r->cmds[i] = strdup(strsep(&buff," "));
-    }
 }
 
 int processFile(Request r, int fdPipe){
@@ -93,7 +93,6 @@ int processFile(Request r, int fdPipe){
     char** cmds = r->cmds;
     int nrCmds = r->nrCmds;
 
-    
     int fdinput = open(r->input,O_RDONLY);                                  
     int fdoutput = open(r->output,O_WRONLY | O_TRUNC | O_CREAT, 0666);
 
@@ -106,7 +105,6 @@ int processFile(Request r, int fdPipe){
 
             if( fork() == 0){                                       // fork vai tratar de o executar
                 close(fildes[0][0]);                                // fechar a leitura do pipe 
-                sleep(5);
                 
                 char* transformation = malloc(sizeof(char)*(strlen(cmds[cmd])+strlen(transformationsFolder))) ;     // alocar memória para o path necessario para o executavel
                 addFolderToTransformation(cmds[cmd],transformation);                                                // colocar o path necessário em transformação
@@ -117,11 +115,9 @@ int processFile(Request r, int fdPipe){
                 else dup2(fildes[0][1],1);                          // se não for último, output passa a ser a escrita no pipe
 
                 close(fildes[0][1]);                                // fechar escrita no pipe
-
                 execl(transformation,transformation,NULL);          // exec da primeira transformação
             }
         }
-
         else if( cmd == nrCmds-1){                                  // se for a ultima transformação
             close(fildes[cmd-1][1]);                                // fechar a escrita do pipe da transformação anterior (nao é mais necessário)
             if( fork() == 0 ){
@@ -154,10 +150,10 @@ int processFile(Request r, int fdPipe){
         }
     }
 
-    int status;
+    for(int i = 0; i < nrCmds; i++){
+        wait(NULL);
+    }
 
-    for(int cmd=0 ; cmd<nrCmds ; cmd++)
-        wait(&status);
 
     char* tamInput = malloc(sizeof(char)*MAXFILESIZEINT);
     char* tamOutput = malloc(sizeof(char)*MAXFILESIZEINT);
@@ -181,55 +177,72 @@ int processFile(Request r, int fdPipe){
 
 }
 
-int showState(){
+void showState(char* pid){
 
+    char* buff = malloc(sizeof(char) * SIZEOFBUFF);
+    int fdFifoWr = open(pid,O_WRONLY);
+
+    for(int i = 0; i < QUEUESIZE; i++){
+        Request r = working[i];
+        if(r){
+            sprintf(buff, "task #%d: proc-file %d %s %s", i, r->priority, r->input, r->output);
+            for(int j = 0; j < r->nrCmds; j++){
+                strcat(buff, " ");
+                strcat(buff, r->cmds[j]);
+            }
+            strcat(buff, "\n");
+            write(fdFifoWr,buff,strlen(buff));
+        }
+    }
+
+    for(int i = 0 ; i < NROFTRANSF; i++){
+        sprintf(buff, "transf %s: %d/%d (running/max)\n", transformationsFile[i], transformationsReps[i], repsFile[i]);
+        write(fdFifoWr,buff,strlen(buff));
+    }
+
+    close(fdFifoWr);
 }
 
 int setToZeroAllTransformationsReps(int transformationsReps[]){
-
-    for(int i=0 ; i<NROFTRANSF ; i++){
+    for(int i=0 ; i<NROFTRANSF ; i++)
         transformationsReps[i] = 0;
-    }
-
 }
 
 int checkReps(char** elements,int nrElements){
-
     for(int i=0 ; i<nrElements ; i++){
-        for( int j=0 ; j<NROFTRANSF ; j++)
-            if( strcmp(elements[i],transformationsFile[j])==0 ){
-                if (transformationsReps[j] == repsFile[j] ) return 1;
-            }
+        for( int j=0 ; j<NROFTRANSF ; j++){
+            if( strcmp(elements[i],transformationsFile[j])==0 )
+                if (transformationsReps[j] == repsFile[j] )
+                    return 1;
+        }
     }
-
     return 0;
 }
 
-int updateReps(Request r){
-
+void updateReps(Request r){
     for(int i=0 ; i<r->nrCmds ; i++){
         for(int j=0 ; j<NROFTRANSF ; j++){
             if(strcmp(r->cmds[i],transformationsFile[j])==0)
                 transformationsReps[j] += 1;
         }
     }
-
 }
 
-int removeReps(char* transformation ){
-    printf("check trans:|%s|\n",transformation);
+int removeReps(char* transformation){
     for(int i=0 ; i<NROFTRANSF ; i++){
         if(strcmp(transformation,transformationsFile[i])==0)
             transformationsReps[i]--;
     }
 }
 
-int fillQueueNULL(){
-
+void fillQueueNULL(){
+    queue = malloc(sizeof(struct request)*QUEUESIZE);
+    working = malloc(sizeof(struct request)*QUEUESIZE);
+    
     for(int i=0 ; i<QUEUESIZE ; i++){
         queue[i] = NULL;
+        working[i] = NULL;
     }
-
 }
 
 int addToQueue(Request r){
@@ -242,18 +255,37 @@ int addToQueue(Request r){
             added = 1;
         }
     }
+    return added;
 }
 
-int removeFromQueue(Request r){
+void removeFromQueue(Request r){
     for(int i=0 ; i<QUEUESIZE ; i++){
         if(queue[i] == r)
             queue[i] = NULL;
     }
 }
 
-int requestInQueueCanProceed(){
-    
+void addToWorking(Request r){
+    for(int i=0 ; (i<QUEUESIZE); i++)
+        if(!working[i]){
+            working[i] = r;
+            return;
+        }
+}
 
+Request removeFromWorking(char* pid){
+    Request r = NULL;
+
+    for(int i=0 ; i<QUEUESIZE ; i++){
+        if(working[i] && strcmp(working[i]->pid, pid) == 0){
+            r = working[i];
+            working[i] = NULL;
+        }
+    }
+    return r;
+}
+
+int requestInQueueCanProceed(){
     for(int i=0 ; i<QUEUESIZE ; i++)
         if(queue[i] != NULL)
             if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0)
@@ -262,14 +294,16 @@ int requestInQueueCanProceed(){
     return -1;
 }
 
-int checkIfRequest(char** buff){
+int checkRequest(char** buff){
 
     char* type = strsep(buff," ");
     int ret = 0;
 
-
-    if(strcmp(type,"proc-file") == 0) ret = 1;
-
+    if(strcmp(type,"proc-file") == 0) 
+        ret = 1;
+    else if(strcmp(type,"status") == 0) 
+        ret = 2;
+    
     return ret;
 }
 
@@ -282,10 +316,13 @@ void checkQueue(){
         
         int fdPipe = open(r->pid,O_WRONLY);
         updateReps(r);
+        addToWorking(r);
         removeFromQueue(r);
-        processFile(r,fdPipe);
+        if (fork() == 0){
+            processFile(r,fdPipe);
+            exit(0);
+        }
     }
-
 }
 
 
@@ -293,56 +330,75 @@ int main(int argc, char** argv){
 
     readTransformationsReps(transformationsRepsFolder);
     setToZeroAllTransformationsReps(transformationsReps);
-    
+
     mkfifo("FifoMain",0666);
 
     int fdFifo = open("FifoMain",O_RDONLY);
     int fdFifoWR = open("FifoMain",O_WRONLY);
-    
+
     char* buff = malloc(sizeof(char)*SIZEOFBUFF);
     int readBytes;
     int requestToProceed;
     char* elementOfRequest;
 
-    queue = malloc(sizeof(struct request)*QUEUESIZE);
     fillQueueNULL();
-    
+
     while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
-        
-        if(checkIfRequest(&buff)){
-            Request r = malloc(sizeof(struct request));
+        Request r;
+        char* pid;
 
-            fillRequest(buff,r);
+        switch(checkRequest(&buff)){
+            case 1:
+                r = malloc(sizeof(struct request));
 
+                fillRequest(buff,r);
 
-            int proceed = checkReps(r->cmds,r->nrCmds);
+                int proceed = checkReps(r->cmds,r->nrCmds);
+                int fdPipe = open(r->pid,O_WRONLY);
 
-            int fdPipe = open(r->pid,O_WRONLY);
-            
-            if(proceed == 0){
-                printf("Processing\n");
-                updateReps(r);
-                processFile(r,fdPipe);
-            }
-            else{
-                printf("Pending...\n");
-                
-                char* buff = "Pending...";
-                write(fdPipe,&buff, strlen(buff));
+                if(proceed == 0){
+                    printf("Processing\n");
+                    updateReps(r);
+                    addToWorking(r);
+                    if (fork() == 0){
+                        processFile(r,fdPipe);
+                        exit(0);
+                    }
+                }
+                else{
+                    printf("Pending...\n");
 
-                addToQueue(r);
+                    char* buff = "Pending...";
+                    write(fdPipe,&buff, strlen(buff));
+                    close(fdPipe);
 
-                close(fdPipe);
+                    addToQueue(r);
+                }
+                break;
 
-            }
-        }
-        else{
-            printf("Concluded!\n");
-            int nrCmds = atoi(strsep(&buff," "));
-            for(int i=0 ; i<nrCmds ; i++)
-                removeReps(strsep(&buff," "));
-            
-            checkQueue();
+            case 2:
+                printf("Status\n\n");
+                if(fork()==0){
+                    pid = strsep(&buff," ");
+                    showState(pid);
+                    exit(0);
+                }
+                break;
+
+            default:
+                pid = strdup(strsep(&buff," "));
+
+                r = removeFromWorking(pid);
+
+                if(r){
+                    for(int i=0; i < r->nrCmds; i++){
+                        removeReps(r->cmds[i]);
+                    }
+                } else printf("nao fiz nada\n");
+
+                printf("Concluded!\n");
+                checkQueue();
+                break;
         }
     }
 }
