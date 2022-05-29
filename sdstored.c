@@ -10,8 +10,8 @@
 
 
 #define NROFTRANSF 7
-#define SIZEOFBUFF 200
-#define QUEUESIZE 10
+#define SIZEOFBUFF 400
+#define QUEUESIZE 15
 #define RESPONSEMAXSIZE 100
 #define MAXFILESIZEINT 50
 
@@ -89,10 +89,7 @@ int processFile(Request r, int fdPipe){
 
     printf("Processing... <%s>\n", r->pid);
     char* buff = "Processing...";
-    write(fdPipe, buff, strlen(buff)); 
-    
-    sleep(5);
-    sleep(5);
+    write(fdPipe, buff, strlen(buff));
 
     char** cmds = r->cmds;
     int nrCmds = r->nrCmds;
@@ -249,17 +246,12 @@ void fillQueueNULL(){
     }
 }
 
-int addToQueue(Request r){
-
-    int added = 0;
-
-    for(int i=0 ; (i<QUEUESIZE) && (added == 0) ; i++){
+void addToQueue(Request r){
+    for(int i=0 ; (i<QUEUESIZE) ; i++)
         if(queue[i] == NULL){
             queue[i] = r;
-            added = 1;
+            return;
         }
-    }
-    return added;
 }
 
 void removeFromQueue(Request r){
@@ -368,13 +360,6 @@ int main(int argc, char** argv){
         Request r;
         char* pid;
 
-// printf("\n-------queue---------\n");
-// for(int i=0 ; (i<QUEUESIZE); i++)
-//     if(queue[i])
-//         printf("queue[%d] (%d) = <%s>\n",i,queue[i]->priority,queue[i]->pid);
-// printf("----------------------\n\n");
-// printf(">>>>>> me corri\n");
-
         switch(checkRequest(&buff)){
             case 1:
                 if(!end){
@@ -382,7 +367,7 @@ int main(int argc, char** argv){
                     fillRequest(buff,r);
 
                     printf("Pending... <%s>\n", r->pid);
-
+                    
                     addToQueue(r);
                     checkQueue();
                 }
