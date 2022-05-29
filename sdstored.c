@@ -35,6 +35,7 @@ int transformationsReps[NROFTRANSF];
 
 Request* queue;
 Request* working;
+int end = 0;
 
 
 
@@ -88,7 +89,10 @@ int processFile(Request r, int fdPipe){
 
     printf("Processing... <%s>\n", r->pid);
     char* buff = "Processing...";
-    write(fdPipe, buff, strlen(buff));
+    write(fdPipe, buff, strlen(buff)); 
+    
+    sleep(5);
+    sleep(5);
 
     char** cmds = r->cmds;
     int nrCmds = r->nrCmds;
@@ -327,8 +331,23 @@ void checkQueue(){
     }
 }
 
+int isWorkingEmpty(){
+    for(int i=0 ; (i<QUEUESIZE); i++)
+        if(working[i])
+            return 0;
+    return 1;
+}
+
+void ctrl_c(int signum){
+    if(isWorkingEmpty()){
+        int p = getpid();
+        kill(p,SIGKILL);
+    }
+    end = 1;
+}
 
 int main(int argc, char** argv){
+    signal(SIGINT,ctrl_c);
 
     readTransformationsReps(transformationsRepsFolder);
     setToZeroAllTransformationsReps(transformationsReps);
@@ -345,34 +364,38 @@ int main(int argc, char** argv){
 
     fillQueueNULL();
 
-    while((readBytes = read(fdFifo,buff,SIZEOFBUFF))>0){
+    while((readBytes = read(fdFifo,buff,SIZEOFBUFF)) > 0){
         Request r;
         char* pid;
 
-printf("\n-------queue---------\n");
-for(int i=0 ; (i<QUEUESIZE); i++)
-    if(queue[i])
-        printf("queue[%d] (%d) = <%s>\n",i,queue[i]->priority,queue[i]->pid);
-printf("----------------------\n\n");
+// printf("\n-------queue---------\n");
+// for(int i=0 ; (i<QUEUESIZE); i++)
+//     if(queue[i])
+//         printf("queue[%d] (%d) = <%s>\n",i,queue[i]->priority,queue[i]->pid);
+// printf("----------------------\n\n");
+// printf(">>>>>> me corri\n");
 
         switch(checkRequest(&buff)){
             case 1:
-                r = malloc(sizeof(struct request));
+                if(!end){
+                    r = malloc(sizeof(struct request));
+                    fillRequest(buff,r);
 
-                fillRequest(buff,r);
+                    printf("Pending... <%s>\n", r->pid);
 
-                printf("Pending... <%s>\n", r->pid);
-
-                addToQueue(r);
-                checkQueue();
+                    addToQueue(r);
+                    checkQueue();
+                }
                 break;
 
             case 2:
-                if(fork()==0){
-                    pid = strsep(&buff," ");
-                    showState(pid);
-                    printf("Status <%s>\n", pid);
-                    exit(0);
+                if(!end){
+                    if(fork()==0){
+                        pid = strsep(&buff," ");
+                        showState(pid);
+                        printf("Status <%s>\n", pid);
+                        exit(0);
+                    }
                 }
                 break;
 
@@ -390,6 +413,11 @@ printf("----------------------\n\n");
                 printf("Concluded! <%s>\n", pid);
                 checkQueue();
                 break;
+        }
+
+        if(end && isWorkingEmpty()){
+            int p = getpid();
+            kill(p,SIGKILL);
         }
     }
 }
