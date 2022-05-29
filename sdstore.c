@@ -68,13 +68,12 @@ int main(int argc, char** argv){
     mkfifo(pidStr,0666);
 
     sendRequest(fdFifoMain, argc, argv, pidStr);
+    printf("Pending...\n");
 
     int fdFifo = open(pidStr,O_RDONLY);
 
     if(strcmp(argv[1], "proc-file") == 0){
-        //do{
-            read(fdFifo,buff,SIZEOFBUFF);
-        //}while(strcmp(argv[1], "Processing...") != 0);
+        read(fdFifo,buff,SIZEOFBUFF);
         printf("Processing...\n");
 
         read(fdFifo,buff,SIZEOFBUFF);
@@ -89,4 +88,6 @@ int main(int argc, char** argv){
             printf("%s",buff);
         }
     }
+
+    close(fdFifo);
 }

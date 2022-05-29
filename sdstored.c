@@ -86,9 +86,9 @@ int fillRequest(char* buff, Request r){                 // vai preencher cmds co
 
 int processFile(Request r, int fdPipe){
 
-    char* buff = "Processing";
-
-    write(fdPipe,&buff, strlen(buff));
+    printf("Processing... <%s>\n", r->pid);
+    char* buff = "Processing...";
+    write(fdPipe, buff, strlen(buff));
 
     char** cmds = r->cmds;
     int nrCmds = r->nrCmds;
@@ -286,11 +286,12 @@ Request removeFromWorking(char* pid){
 }
 
 int requestInQueueCanProceed(){
-    for(int i=0 ; i<QUEUESIZE ; i++)
-        if(queue[i] != NULL)
-            if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0)
-                return i;
-        
+    for(int priorityLevel = 5; priorityLevel >= 0; priorityLevel--)
+        for(int i=0 ; i<QUEUESIZE ; i++)
+            if(queue[i] != NULL && queue[i]->priority == priorityLevel)
+                if(checkReps(queue[i]->cmds,queue[i]->nrCmds) == 0)
+                    return i;
+
     return -1;
 }
 
@@ -322,6 +323,7 @@ void checkQueue(){
             processFile(r,fdPipe);
             exit(0);
         }
+        close(fdPipe);
     }
 }
 
@@ -347,40 +349,29 @@ int main(int argc, char** argv){
         Request r;
         char* pid;
 
+printf("\n-------queue---------\n");
+for(int i=0 ; (i<QUEUESIZE); i++)
+    if(queue[i])
+        printf("queue[%d] (%d) = <%s>\n",i,queue[i]->priority,queue[i]->pid);
+printf("----------------------\n\n");
+
         switch(checkRequest(&buff)){
             case 1:
                 r = malloc(sizeof(struct request));
 
                 fillRequest(buff,r);
 
-                int proceed = checkReps(r->cmds,r->nrCmds);
-                int fdPipe = open(r->pid,O_WRONLY);
+                printf("Pending... <%s>\n", r->pid);
 
-                if(proceed == 0){
-                    printf("Processing\n");
-                    updateReps(r);
-                    addToWorking(r);
-                    if (fork() == 0){
-                        processFile(r,fdPipe);
-                        exit(0);
-                    }
-                }
-                else{
-                    printf("Pending...\n");
-
-                    char* buff = "Pending...";
-                    write(fdPipe,&buff, strlen(buff));
-                    close(fdPipe);
-
-                    addToQueue(r);
-                }
+                addToQueue(r);
+                checkQueue();
                 break;
 
             case 2:
-                printf("Status\n\n");
                 if(fork()==0){
                     pid = strsep(&buff," ");
                     showState(pid);
+                    printf("Status <%s>\n", pid);
                     exit(0);
                 }
                 break;
@@ -396,7 +387,7 @@ int main(int argc, char** argv){
                     }
                 } else printf("nao fiz nada\n");
 
-                printf("Concluded!\n");
+                printf("Concluded! <%s>\n", pid);
                 checkQueue();
                 break;
         }
