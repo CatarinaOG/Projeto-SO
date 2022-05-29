@@ -25,8 +25,8 @@ typedef struct request {
 }* Request;
 
 
-char* transformationsRepsFolder = "./transformationsReps/Reps";
-char* transformationsFolder = "./transformations/";
+char* transformationsRepsFolder = "./../transformationsReps/Reps";
+char* transformationsFolder = "./../transformations/";
 
 char* transformationsFile[NROFTRANSF];
 int repsFile[NROFTRANSF];
@@ -39,7 +39,7 @@ int end = 0;
 
 
 
-int readTransformationsReps(char* filepath){                    //Lê o ficheiro de reps de transformacoes
+void readTransformationsReps(char* filepath){                    //Lê o ficheiro de reps de transformacoes
 
     int fd = open(filepath,O_RDONLY);                   
     int bufferSize = 1024;
@@ -66,12 +66,12 @@ int readTransformationsReps(char* filepath){                    //Lê o ficheiro
     }
 }
 
-int addFolderToTransformation(char* t, char* transformation){      //vai colocar em transformation o caminho correto para a transformacao t   
+void addFolderToTransformation(char* t, char* transformation){      //vai colocar em transformation o caminho correto para a transformacao t   
     strcpy(transformation,transformationsFolder);                  // Ex:  t=bcompress transformation = ./transformations/bcomrpess
     strcat(transformation,t);
 }
 
-int fillRequest(char* buff, Request r){                 // vai preencher cmds com todas os elementos do pedido
+void fillRequest(char* buff, Request r){                 // vai preencher cmds com todas os elementos do pedido
 
     r->pid = strdup(strsep(&buff," "));
     r->nrCmds = atoi(strsep(&buff," "));
@@ -85,7 +85,7 @@ int fillRequest(char* buff, Request r){                 // vai preencher cmds co
         r->cmds[i] = strdup(strsep(&buff," "));
 }
 
-int processFile(Request r, int fdPipe){
+void processFile(Request r, int fdPipe){
 
     printf("Processing... <%s>\n", r->pid);
     char* buff = "Processing...";
@@ -204,7 +204,7 @@ void showState(char* pid){
     close(fdFifoWr);
 }
 
-int setToZeroAllTransformationsReps(int transformationsReps[]){
+void setToZeroAllTransformationsReps(int transformationsReps[]){
     for(int i=0 ; i<NROFTRANSF ; i++)
         transformationsReps[i] = 0;
 }
@@ -229,7 +229,7 @@ void updateReps(Request r){
     }
 }
 
-int removeReps(char* transformation){
+void removeReps(char* transformation){
     for(int i=0 ; i<NROFTRANSF ; i++){
         if(strcmp(transformation,transformationsFile[i])==0)
             transformationsReps[i]--;
@@ -341,18 +341,16 @@ void ctrl_c(int signum){
 int main(int argc, char** argv){
     signal(SIGINT,ctrl_c);
 
-    readTransformationsReps(transformationsRepsFolder);
-    setToZeroAllTransformationsReps(transformationsReps);
+    readTransformationsReps(argv[1]);
+    setToZeroAllTransformationsReps(argv[2]);
 
-    mkfifo("FifoMain",0666);
+    mkfifo("../tmp/FifoMain",0666);
 
-    int fdFifo = open("FifoMain",O_RDONLY);
-    int fdFifoWR = open("FifoMain",O_WRONLY);
+    int fdFifo = open("../tmp/FifoMain",O_RDONLY);
+    int fdFifoWR = open("../tmp/FifoMain",O_WRONLY);
 
     char* buff = malloc(sizeof(char)*SIZEOFBUFF);
     int readBytes;
-    int requestToProceed;
-    char* elementOfRequest;
 
     fillQueueNULL();
 
@@ -405,4 +403,7 @@ int main(int argc, char** argv){
             kill(p,SIGKILL);
         }
     }
+    close(fdFifoWR);
+    close(fdFifo);
+    return 0;
 }

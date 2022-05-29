@@ -56,14 +56,15 @@ void sendFinished(int fdFifoMain, char* pidStr){
 }
 
 
+
 int main(int argc, char** argv){
 
-    int fdFifoMain = open("FifoMain",O_WRONLY);
+    int fdFifoMain = open("../tmp/FifoMain",O_WRONLY);
     char* buff = malloc(sizeof(char)*SIZEOFBUFF);
     char pidStr[20];
 
     int pid = getpid();
-    sprintf(pidStr, "%d", pid);
+    sprintf(pidStr, "../tmp/%d", pid);
 
     mkfifo(pidStr,0666);
 
