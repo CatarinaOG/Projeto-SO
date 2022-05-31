@@ -10,7 +10,7 @@
 
 
 #define NROFTRANSF 7
-#define SIZEOFBUFF 400
+#define SIZEOFBUFF 200
 #define QUEUESIZE 15
 #define RESPONSEMAXSIZE 100
 #define MAXFILESIZEINT 50
@@ -311,15 +311,15 @@ void checkQueue(){
     while( (requestToProceed = requestInQueueCanProceed()) >= 0){
         Request r = queue[requestToProceed];
         
-        int fdPipe = open(r->pid,O_WRONLY);
         updateReps(r);
         addToWorking(r);
         removeFromQueue(r);
         if (fork() == 0){
+            int fdPipe = open(r->pid,O_WRONLY);
             processFile(r,fdPipe);
+            close(fdPipe);
             exit(0);
         }
-        close(fdPipe);
     }
 }
 
@@ -341,8 +341,13 @@ void ctrl_c(int signum){
 int main(int argc, char** argv){
     signal(SIGINT,ctrl_c);
 
-    readTransformationsReps(argv[1]);
-    setToZeroAllTransformationsReps(argv[2]);
+    if(argc == 3){
+        transformationsFolder = argv[2];
+        transformationsRepsFolder = argv[1];
+    }
+
+    readTransformationsReps(transformationsRepsFolder);
+    setToZeroAllTransformationsReps(transformationsReps);
 
     mkfifo("../tmp/FifoMain",0666);
 
@@ -350,6 +355,7 @@ int main(int argc, char** argv){
     int fdFifoWR = open("../tmp/FifoMain",O_WRONLY);
 
     char* buff = malloc(sizeof(char)*SIZEOFBUFF);
+    char* origem = buff;
     int readBytes;
 
     fillQueueNULL();
@@ -402,6 +408,7 @@ int main(int argc, char** argv){
             int p = getpid();
             kill(p,SIGKILL);
         }
+        buff = origem;
     }
     close(fdFifoWR);
     close(fdFifo);
